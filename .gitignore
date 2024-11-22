@@ -1,0 +1,6 @@
+__pycache__
+__cffi__
+build
+dist
+librdkafka_cffi.egg-info
+librdkafka_cffi/*.so
