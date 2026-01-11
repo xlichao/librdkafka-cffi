@@ -1,7 +1,12 @@
 from setuptools import setup, Extension,find_packages
 from setuptools.command.build_ext import build_ext
-from _build import Builder
 import os
+import sys
+
+# Add current directory to path for _build import
+sys.path.insert(0, os.path.dirname(__file__))
+
+from _build import Builder
 import shutil
 
 LIB_NAME = "librdkafka_cffi"

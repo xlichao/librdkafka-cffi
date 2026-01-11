@@ -40,7 +40,10 @@ class Builder:
                     processor.process()
           logger.info("添加一些额外的代码")
           additional_codes = [
-               'extern "Python" void log_callback(const rd_kafka_t *rk,int level,const char *fac,const char *buf);',
+               'typedef void PyObject;', # Add this line
+               'extern "Python" void log_callback(rd_kafka_t *rk, int level, const char *fac, const char *buf);',
+               'extern "Python" void rebalance_callback(rd_kafka_t *rk, rd_kafka_resp_err_t err, rd_kafka_topic_partition_list_t *partitions, void *opaque);',
+               'extern "Python" void delivery_report_callback(rd_kafka_t *rk, const rd_kafka_message_t *msg, void *opaque);',
           ]
           with open(self.CDEF_PATH,"a") as target_file:
                for code in additional_codes:
@@ -92,7 +95,7 @@ class Builder:
 
 
 if __name__ == "__main__":
-     builder = Builder()
+     builder = Builder(ship_so_to=os.path.join(os.path.dirname(__file__), "librdkafka_cffi"))
      builder.build()
 
     
