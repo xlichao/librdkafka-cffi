@@ -1,36 +1,32 @@
-from setuptools import setup, Extension,find_packages
-from setuptools.command.build_ext import build_ext
-import os
-import sys
+from setuptools import setup, find_packages
+import logging
 
-# Add current directory to path for _build import
-sys.path.insert(0, os.path.dirname(__file__))
+# Set up basic logging
+logging.basicConfig(level=logging.INFO)
 
-from _build import Builder
-import shutil
-
-LIB_NAME = "librdkafka_cffi"
-CFFI_LIB_NAME = f"_{LIB_NAME}"
-
-class CustomBuildExt(build_ext):
-      def run(self):
-            # 执行自定义构建过程，并且将构建好的东西分发到指定位置。
-            current_path = os.path.dirname(__file__)
-            ship_to = os.path.join(current_path,LIB_NAME)
-            builder = Builder(lib_name=CFFI_LIB_NAME,ship_so_to=ship_to)
-            builder.build()            
-
-
-setup(name=LIB_NAME,
-      version='0.0.1',
-      description='helloworld!',
-      author='hello',
-      author_email='helloworld@outlook.com',
-      requires=['cffi'], # 定义依赖哪些模块
-      packages=find_packages(), # 系统自动从当前目录开始找包
-      license='apache 3.0',
-      ext_modules=[
-            Extension('build_cffi', []), # 这个不重要，存在就行
-      ],
-      package_data={'': [f'{CFFI_LIB_NAME}*']},
-      cmdclass={"build_ext": CustomBuildExt})
+setup(
+    name="librdkafka_cffi",
+    version='0.0.2',
+    description='CFFI-based Python wrapper for librdkafka',
+    author='Your Name',
+    author_email='your.email@example.com',
+    packages=find_packages(exclude=["wrapper_generator", "wrapper_generator.*"]),
+    include_package_data=True,
+    setup_requires=['cffi>=1.0.0'],
+    cffi_modules=["wrapper_generator/_build.py:ffibuilder"],
+    install_requires=['cffi>=1.0.0'],
+    zip_safe=False,
+    license='MIT',
+    classifiers=[
+        "Development Status :: 4 - Beta",
+        "Intended Audience :: Developers",
+        "License :: OSI Approved :: MIT License",
+        "Operating System :: POSIX :: Linux",
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Topic :: Software Development :: Libraries",
+    ],
+)

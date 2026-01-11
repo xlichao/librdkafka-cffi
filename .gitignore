@@ -4,3 +4,9 @@ build
 dist
 librdkafka_cffi.egg-info
 librdkafka_cffi/*.so
+
+# Build artifacts
+build/
+dist/
+wheelhouse/
+*.egg-info/
