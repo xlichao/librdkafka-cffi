@@ -24,7 +24,16 @@ def consume_messages(broker: str, group_id: str, topic: str):
         logger.info(f"Initializing KafkaConsumer with config: {config}")
         consumer = KafkaConsumer(config)
         logger.info(f"Subscribing to topic: {topic}")
-        consumer.subscribe([topic])
+        
+        # Wrap subscription in a try-except to handle unknown topics gracefully
+        try:
+            consumer.subscribe([topic])
+        except KafkaException as e:
+            if "Unknown topic or partition" in str(e):
+                logger.warning(f"Topic '{topic}' not yet available or has no partitions. Will wait for messages.")
+                # Continue execution to allow the 5-second timeout logic to apply
+            else:
+                raise # Re-raise other Kafka exceptions during subscription
 
         # Try to consume a single message within a timeout
         start_time = time.time()
@@ -32,32 +41,31 @@ def consume_messages(broker: str, group_id: str, topic: str):
         message_consumed = False
 
         while (time.time() - start_time) < timeout_seconds:
-            msg = consumer.poll(100) # Poll with a short timeout to allow checking overall timeout
+            try:
+                # Poll with a short timeout to allow checking overall timeout
+                # and to give librdkafka a chance to re-subscribe if topic becomes available
+                msg = consumer.poll(100) 
 
-            if msg is None:
-                logger.debug("No message received yet, continuing to poll.")
-                continue
-
-            if msg.has_error:
-                # Need to get ffi and lib from librdkafka_cffi to decode error messages
-                from librdkafka_cffi import ffi, lib
-                if msg.error_msg == ffi.string(lib.rd_kafka_err2str(lib.RD_KAFKA_RESP_ERR__PARTITION_EOF)).decode():
-                    logger.info(f"Reached end of partition for topic {msg.topic}, partition {msg.partition}. Waiting for new messages.")
-                    # Continue polling as it's just end of partition, not a critical error
+                if msg is None:
+                    logger.debug("No message received yet, continuing to poll (or PARTITION_EOF reached).")
+                    continue
                 else:
-                    logger.error(f"Consumer error: {msg.error_msg}")
-                    break # Break on other errors
-            else:
-                logger.info(f"Consumed message from topic {msg.topic}, "
-                            f"partition {msg.partition}, offset {msg.offset}: "
-                            f"key={msg.key.decode('utf-8') if msg.key else 'None'}, "
-                            f"value={msg.value.decode('utf-8') if msg.value else 'None'}")
-                
-                # Manual commit after processing
-                consumer.commit(msg)
-                logger.info(f"Committed offset {msg.offset + 1} for topic {msg.topic} partition {msg.partition}")
-                message_consumed = True
-                break # Exit after consuming one message
+                    logger.info(f"Consumed message from topic {msg.topic}, "
+                                f"partition {msg.partition}, offset {msg.offset}: "
+                                f"key={msg.key.decode('utf-8') if msg.key else 'None'}, "
+                                f"value={msg.value.decode('utf-8') if msg.value else 'None'}")
+                    
+                    # Manual commit after processing
+                    consumer.commit(msg)
+                    logger.info(f"Committed offset {msg.offset + 1} for topic {msg.topic} partition {msg.partition}")
+                    message_consumed = True
+                    break # Exit after consuming one message
+            except KafkaException as e:
+                if "Unknown topic or partition" in str(e):
+                    logger.warning(f"Topic '{topic}' not yet available or has no partitions. Continuing to poll. Error: {e}")
+                    # Allow loop to continue and eventually time out
+                else:
+                    raise # Re-raise other Kafka exceptions to be caught by the outer block
 
         if not message_consumed:
             logger.info(f"No message received within {timeout_seconds} seconds.")

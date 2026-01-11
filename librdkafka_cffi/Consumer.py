@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 from ._cffi import ffi, lib, _check_kafka_error, NO_ERROR
 from .errors import KafkaConfigException, KafkaException
-
+import time
 
 RD_KAFKA_PARTITION_UA=-1
 
@@ -20,30 +20,18 @@ class Message:
 
     @staticmethod
     def from_cdata(rkm):
-        # 从 cdata 读取，未实现时间戳
-        if rkm == ffi.NULL:
-            return None
+        # Assumes rkm is not FFI.NULL and rkm.err == 0 (error handled by poll)
         msg = Message()
-        # 从 rkm 中读取
-        if rkm.err != 0:
-            error_str = lib.rd_kafka_message_errstr(rkm)
-            msg.has_error = True
-            msg.error_msg = ffi.string(error_str).decode()
-            lib.rd_kafka_message_destroy(rkm)
-            return msg
-        # 这里应该可以缓存 rkt 到 topic 名的映射，或者外部一次性读取一堆消息
         topic_name = lib.rd_kafka_topic_name(rkm.rkt)
         msg.topic = ffi.string(topic_name).decode()
         msg.partition = rkm.partition
         msg.offset = rkm.offset
         # 处理 payload
         if rkm.payload != ffi.NULL:
-            # rkm.payload 是个  void * 需要强制转换
             payload = ffi.cast("const char *",rkm.payload)
             value:bytes = ffi.string(payload,rkm.len)
             msg.value = value
         if rkm.key != ffi.NULL:
-            # rkm.payload 是个  void * 需要强制转换
             payload = ffi.cast("const char *",rkm.key)
             key:bytes = ffi.string(payload,rkm.key_len)
             msg.key = key
@@ -109,11 +97,28 @@ class KafkaConsumer:
         # print(f"Subscribed to {len(topics)} topic(s)") # Removed as per logging centralization
         lib.rd_kafka_topic_partition_list_destroy(subscription)
     
-    def poll(self,timeout:float):
+    def poll(self, timeout:float):
         timeout_ms = int(timeout * 1000)
         if self.rk == ffi.NULL:
-            raise RuntimeError
+            raise RuntimeError("Consumer is not initialized.")
         rkm = lib.rd_kafka_consumer_poll(self.rk, timeout_ms)
+        
+        if rkm == ffi.NULL: # Timeout, no message
+            return None
+        
+        if rkm.err != 0:
+            error_code = rkm.err
+            error_str = ffi.string(lib.rd_kafka_err2str(error_code)).decode('utf-8')
+            lib.rd_kafka_message_destroy(rkm) # Destroy the C message
+            
+            if error_code == lib.RD_KAFKA_RESP_ERR__PARTITION_EOF:
+                time.sleep(timeout)
+                return None # As requested, return None for EOF
+            else:
+                # For other errors, raise a KafkaException
+                raise KafkaException(f"Consumer error: {error_str} (Code: {error_code})")
+        
+        # If no error, proceed to create Message object
         msg = Message.from_cdata(rkm)
         return msg
 
